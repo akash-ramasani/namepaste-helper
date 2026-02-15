@@ -1,0 +1,224 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --panel: #ffffff;
+        --border: #e2e8f0;
+        --text-main: #1e293b;
+        --text-sub: #64748b;
+        --accent: #6366f1;
+        --accent-hover: #4f46e5;
+        --accent-soft: #eef2ff;
+      }
+
+      body {
+        margin: 0;
+        width: 340px;
+        height: 480px; /* Fixed height to prevent jumping */
+        font-family: 'Inter', -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text-main);
+        overflow: hidden; /* Prevent body scroll */
+      }
+
+      .container {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        box-sizing: border-box;
+      }
+
+      /* Compact Header */
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      h1 { font-size: 13px; margin: 0; font-weight: 700; color: var(--accent); }
+
+      .status-tag {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: white;
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .status-dot { width: 5px; height: 5px; background: #10b981; border-radius: 50%; }
+
+      /* Slim Toggle Card */
+      .toggle-bar {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .toggle-bar span { font-size: 12px; font-weight: 500; }
+
+      /* Tiny Toggle Switch */
+      .switch { position: relative; width: 28px; height: 16px; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider {
+        position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #cbd5e1; transition: .2s; border-radius: 20px;
+      }
+      .slider:before {
+        position: absolute; content: ""; height: 10px; width: 10px;
+        left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%;
+      }
+      input:checked + .slider { background-color: var(--accent); }
+      input:checked + .slider:before { transform: translateX(12px); }
+
+      /* Label & Tiny Buttons Row */
+      .label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 4px;
+      }
+
+      label {
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--text-sub);
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      .text-action-btn {
+        background: transparent;
+        border: none;
+        color: var(--accent);
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      /* Expanded Textareas */
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 12px;
+        font-family: inherit;
+        line-height: 1.4;
+        resize: none;
+        flex-grow: 1; /* This makes it fill space */
+        margin-bottom: 10px;
+      }
+
+      textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
+
+      .preview-area {
+        background: #f1f5f9;
+        color: var(--text-sub);
+        border-style: dashed;
+        flex-grow: 1.2; /* Give preview slightly more space */
+      }
+
+      /* Footer Action Bar */
+      .action-bar {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+      }
+
+      .btn {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: white;
+        transition: 0.1s;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: white;
+        border: none;
+        flex: 2; /* Main buttons are wider */
+      }
+
+      .btn-secondary {
+        flex: 1;
+        color: var(--text-sub);
+      }
+
+      .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+      .hint {
+        font-size: 10px;
+        color: var(--text-sub);
+        margin-top: 8px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      
+      <div class="header">
+        <h1>NamePaste Helper</h1>
+        <div class="status-tag">
+          <div class="status-dot"></div>
+          <span id="statusPill">Idle</span>
+        </div>
+      </div>
+
+      <div class="toggle-bar">
+        <span>Enable on LinkedIn</span>
+        <label class="switch">
+          <input type="checkbox" id="enabled">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="label-row">
+        <label>Template</label>
+        <button class="text-action-btn" id="example">+ Load Example</button>
+      </div>
+      <textarea id="tpl" placeholder="e.g. Hi {FirstName}, let's connect!"></textarea>
+      
+      <div class="action-bar">
+        <button class="btn btn-primary" id="save">Save Template</button>
+      </div>
+
+      <div style="margin-top: 10px;" class="label-row">
+        <label>Live Preview</label>
+        <button class="text-action-btn" id="refresh">↻ Refresh</button>
+      </div>
+      <textarea id="preview" class="preview-area" readonly placeholder="Waiting for profile..."></textarea>
+
+      <div class="action-bar">
+        <button class="btn btn-primary" id="copyFromPopup">Copy Message</button>
+      </div>
+
+      <div class="hint">
+        Use: <code>{FirstName}</code> <code>{FullName}</code>
+      </div>
+
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
