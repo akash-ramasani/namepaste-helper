@@ -1,388 +1,906 @@
-(() => {
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+if (window.__NAMEPASTE_HELPER_LOADED__) {
+  console.log("[NamePaste Helper] already loaded, skipping duplicate init");
+} else {
+  window.__NAMEPASTE_HELPER_LOADED__ = true;
 
-  // ---------- Config ----------
-  const UI_ID = "__li_copy_paste_btn__";
-  const GAP_PX = 10;
+  (() => {
+    const PREFIX = "[NamePaste Helper]";
+    const UI_ID = "__namepaste_helper_btn__";
+    const TOAST_ID = "__namepaste_helper_toast__";
+    const DEBUG = false;
 
-  // ---------- Name helpers ----------
-  function normalizeName(full) {
-    if (!full) return null;
-    return full.replace(/\s+/g, " ").trim();
-  }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  function firstNameFromFull(full) {
-    const n = normalizeName(full);
-    if (!n) return null;
-    const cleaned = n.split("(")[0].split(",")[0].trim();
-    const parts = cleaned.split(" ").filter(Boolean);
-    return parts.length ? parts[0] : null;
-  }
+    function log(...args) {
+      if (DEBUG) console.log(PREFIX, ...args);
+    }
 
-  function getProfileName() {
-    const anchor = document
-      .querySelector('a[aria-label] h1')
-      ?.closest('a[aria-label]');
-    const aria = anchor?.getAttribute("aria-label")?.trim();
-    if (aria) return aria;
+    function warn(...args) {
+      console.warn(PREFIX, ...args);
+    }
 
-    const h1 = document.querySelector("main h1, h1");
-    const txt = h1?.textContent?.trim();
-    if (txt && txt.length >= 2 && txt.length <= 100) return txt;
+    function error(...args) {
+      console.error(PREFIX, ...args);
+    }
 
-    const title = document.title;
-    if (title && title.includes(" | LinkedIn")) return title.split("|")[0].trim();
+    function norm(v) {
+      return (v || "").replace(/\s+/g, " ").trim();
+    }
 
-    return null;
-  }
+    function low(v) {
+      return norm(v).toLowerCase();
+    }
 
-  function buildMessage(template, fullName) {
-    const full = normalizeName(fullName) || "";
-    const first = firstNameFromFull(full) || "there";
-
-    const msg = (template || "")
-      .replaceAll("{FirstName}", first)
-      .replaceAll("{Name}", first)
-      .replaceAll("{FullName}", full);
-
-    return { msg, first, full };
-  }
-
-  // ---------- Clipboard ----------
-  async function copyToClipboard(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (e) {
-      // Fallback copy
+    function hasChromeRuntime() {
       try {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        ta.style.top = "-9999px";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        const ok = document.execCommand("copy");
-        ta.remove();
-        return ok;
+        return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
       } catch {
         return false;
       }
     }
-  }
 
-  // ---------- Auto Paste (React/Ember safe) ----------
-  async function pasteIntoTextarea(text) {
-    let textarea = null;
-
-    // Wait for the invite textarea to exist
-    for (let i = 0; i < 20; i++) {
-      textarea = document.querySelector("#custom-message");
-      if (textarea) break;
-      await sleep(100);
-    }
-    if (!textarea) return false;
-
-    textarea.focus();
-
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      "value"
-    )?.set;
-
-    if (!nativeSetter) return false;
-
-    nativeSetter.call(textarea, text);
-
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    textarea.dispatchEvent(new Event("change", { bubbles: true }));
-
-    return true;
-  }
-
-  // ---------- Toast ----------
-  function showToast(msg) {
-    const toast = document.createElement("div");
-    toast.textContent = msg;
-
-    toast.style.position = "fixed";
-    toast.style.left = "24px";
-    toast.style.bottom = "24px";
-    toast.style.zIndex = "999999";
-
-    toast.style.background = "#ffffff";
-    toast.style.border = "1px solid #e2e8f0";
-    toast.style.color = "#1e293b";
-
-    toast.style.padding = "8px 10px";
-    toast.style.borderRadius = "8px";
-    toast.style.fontSize = "12px";
-    toast.style.fontFamily =
-      "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
-    toast.style.fontWeight = "600";
-    toast.style.boxShadow = "0 8px 24px rgba(15, 23, 42, 0.12)";
-
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 1800);
-  }
-
-  // ---------- Positioning helpers ----------
-  function clamp(n, min, max) {
-    return Math.max(min, Math.min(max, n));
-  }
-
-  function getActiveDialog() {
-    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
-    let best = null;
-    let bestArea = 0;
-
-    for (const d of dialogs) {
-      const r = d.getBoundingClientRect();
-      const visible =
-        r.width > 200 &&
-        r.height > 150 &&
-        r.bottom > 0 &&
-        r.right > 0 &&
-        r.top < window.innerHeight &&
-        r.left < window.innerWidth;
-
-      if (!visible) continue;
-
-      const area = r.width * r.height;
-      if (area > bestArea) {
-        bestArea = area;
-        best = d;
+    function hasChromeStorage() {
+      try {
+        return (
+          typeof chrome !== "undefined" &&
+          !!chrome.storage &&
+          (!!chrome.storage.sync || !!chrome.storage.local)
+        );
+      } catch {
+        return false;
       }
     }
-    return best;
-  }
 
-  function findSendButtonInDialog(dialog) {
-    if (!dialog) return null;
+    function isExtensionContextInvalid(err) {
+      return String(err || "").toLowerCase().includes("extension context invalidated");
+    }
 
-    // Try common/robust selectors
-    const candidates = [
-      'button[aria-label="Send"]',
-      'button.artdeco-button--primary',
-      'button[data-control-name*="send"]',
-      'button[type="submit"]'
-    ];
-
-    for (const sel of candidates) {
-      const btns = Array.from(dialog.querySelectorAll(sel));
-      // Pick the one whose text is "Send" if possible
-      const exact = btns.find(
-        (b) => (b.textContent || "").trim().toLowerCase() === "send"
+    function isVisible(el) {
+      if (!el || !(el instanceof Element)) return false;
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return (
+        rect.width > 2 &&
+        rect.height > 2 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.opacity !== "0"
       );
-      if (exact) return exact;
-
-      // Otherwise first visible button
-      const visible = btns.find((b) => {
-        const r = b.getBoundingClientRect();
-        return r.width > 40 && r.height > 20;
-      });
-      if (visible) return visible;
     }
 
-    return null;
-  }
-
-  function positionButton(btn) {
-  const dialog = getActiveDialog();
-
-  if (dialog) {
-    const dialogRect = dialog.getBoundingClientRect();
-    const btnW = btn.offsetWidth || 140;
-    const btnH = btn.offsetHeight || 36;
-    
-
-    const VERTICAL_GAP = 20;   // <-- increase space here
-    const HORIZONTAL_ALIGN = "right"; // "left" | "center" | "right"
-
-    let left;
-
-    if (HORIZONTAL_ALIGN === "left") {
-      left = dialogRect.left;
-    } else if (HORIZONTAL_ALIGN === "center") {
-      left = dialogRect.left + (dialogRect.width - btnW) / 2;
-    } else {
-      // right aligned (matches Send button alignment visually)
-      left = dialogRect.right - btnW;
+    function describe(el) {
+      if (!el) return "null";
+      return {
+        tag: el.tagName?.toLowerCase(),
+        id: el.id || "",
+        className:
+          typeof el.className === "string"
+            ? el.className.split(/\s+/).slice(0, 6).join(" ")
+            : "",
+        text: norm(el.innerText || el.textContent || "").slice(0, 140),
+        aria: el.getAttribute?.("aria-label") || ""
+      };
     }
 
-    let top = dialogRect.bottom + VERTICAL_GAP;
-
-    // Clamp inside viewport
-    left = clamp(left, 10, window.innerWidth - btnW - 10);
-    top = clamp(top, 10, window.innerHeight - btnH - 10);
-
-    btn.style.position = "fixed";
-    btn.style.left = `${Math.round(left)}px`;
-    btn.style.top = `${Math.round(top)}px`;
-    btn.style.transform = "none";
-
-    return;
-  }
-
-  // Fallback position when modal not open
-  btn.style.position = "fixed";
-  btn.style.left = "28px";
-  btn.style.top = "50%";
-  btn.style.transform = "translateY(-50%)";
-}
-
-  // ---------- Button ----------
-  let __posInterval = null;
-  let __listenersAttached = false;
-
-  function attachRepositionListeners() {
-    if (__listenersAttached) return;
-    __listenersAttached = true;
-
-    const onMove = () => {
-      const existing = document.getElementById(UI_ID);
-      if (existing) positionButton(existing);
-    };
-
-    window.addEventListener("scroll", onMove, true);
-    window.addEventListener("resize", onMove);
-
-    // Poll because LinkedIn SPA + modal animations
-    __posInterval = setInterval(() => {
-      const existing = document.getElementById(UI_ID);
-      if (!existing) {
-        clearInterval(__posInterval);
-        __posInterval = null;
-        __listenersAttached = false;
-        return;
+    async function waitFor(fn, label, timeout = 10000, interval = 150) {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          const v = fn();
+          if (v) {
+            if (v instanceof Element) log("waitFor success:", label, describe(v));
+            return v;
+          }
+        } catch (e) {
+          log("waitFor retry error:", label, e);
+        }
+        await sleep(interval);
       }
-      positionButton(existing);
-    }, 350);
-  }
+      log("waitFor timeout:", label);
+      return null;
+    }
 
-  function ensureButton() {
-    if (document.getElementById(UI_ID)) return;
+    function showToast(msg) {
+      const old = document.getElementById(TOAST_ID);
+      if (old) old.remove();
 
-    const btn = document.createElement("button");
-    btn.id = UI_ID;
-    btn.type = "button";
-    btn.textContent = "Copy & Paste";
-    btn.setAttribute("aria-label", "Copy and paste personalized message");
+      const div = document.createElement("div");
+      div.id = TOAST_ID;
+      div.textContent = msg;
+      div.style.position = "fixed";
+      div.style.left = "24px";
+      div.style.bottom = "24px";
+      div.style.zIndex = "2147483647";
+      div.style.background = "#fff";
+      div.style.color = "#111";
+      div.style.border = "1px solid #ddd";
+      div.style.borderRadius = "10px";
+      div.style.padding = "10px 12px";
+      div.style.fontSize = "12px";
+      div.style.fontWeight = "700";
+      div.style.fontFamily = "Arial, sans-serif";
+      div.style.boxShadow = "0 8px 24px rgba(0,0,0,.15)";
+      document.body.appendChild(div);
 
-    // Style (same vibe as before)
-    btn.style.zIndex = "999999";
-    btn.style.background = "#6366f1";
-    btn.style.color = "#ffffff";
-    btn.style.border = "none";
-    btn.style.borderRadius = "8px";
-    btn.style.padding = "10px 14px";
-    btn.style.fontSize = "12px";
-    btn.style.fontFamily =
-      "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
-    btn.style.fontWeight = "700";
-    btn.style.letterSpacing = "0.01em";
-    btn.style.cursor = "pointer";
-    btn.style.boxShadow = "0 12px 28px rgba(15,23,42,.25)";
-    btn.style.transition = "transform 0.12s ease, background 0.12s ease, opacity 0.12s ease";
+      setTimeout(() => {
+        if (div?.parentNode) div.remove();
+      }, 2200);
+    }
 
-    btn.addEventListener("mouseenter", () => {
-      btn.style.background = "#4f46e5";
-      // Small nudge (but do not mess with anchored positioning too much)
-      btn.style.transform = "translateX(2px)";
-    });
+    function storageArea() {
+      try {
+        if (!hasChromeStorage()) return null;
+        if (chrome.storage.sync) return chrome.storage.sync;
+        if (chrome.storage.local) return chrome.storage.local;
+        return null;
+      } catch {
+        return null;
+      }
+    }
 
-    btn.addEventListener("mouseleave", () => {
-      btn.style.background = "#6366f1";
-      btn.style.transform = "none";
-      // Re-apply exact position to avoid drift
-      positionButton(btn);
-    });
+    function storageGet(defaults) {
+      const area = storageArea();
+      if (!area) return Promise.resolve({ ...(defaults || {}) });
 
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.style.opacity = "0.85";
-      const oldText = btn.textContent;
-      btn.textContent = "Working...";
+      return new Promise((resolve) => {
+        try {
+          area.get(defaults || {}, (res) => {
+            try {
+              if (typeof chrome !== "undefined" && chrome.runtime?.lastError) {
+                resolve({ ...(defaults || {}) });
+                return;
+              }
+            } catch { }
+            resolve({ ...(defaults || {}), ...(res || {}) });
+          });
+        } catch {
+          resolve({ ...(defaults || {}) });
+        }
+      });
+    }
+
+    function storageSet(obj) {
+      const area = storageArea();
+      if (!area) return Promise.resolve();
+
+      return new Promise((resolve) => {
+        try {
+          area.set(obj || {}, () => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+
+    async function copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-99999px";
+          ta.style.top = "-99999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          ta.remove();
+          return !!ok;
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    function clickLikeUser(el, label = "click") {
+      if (!el) return false;
+
+      log("clickLikeUser", label, describe(el));
 
       try {
-        const { template, enabled } = await chrome.storage.sync.get({
-          template: "",
-          enabled: true
-        });
+        el.scrollIntoView({ block: "center", inline: "center" });
+      } catch { }
 
-        if (!enabled) {
-          showToast("Extension disabled");
-          return;
-        }
+      try {
+        el.focus?.();
+      } catch { }
 
-        if (!template || !template.trim()) {
-          showToast("Set a template in the popup");
-          return;
-        }
+      try {
+        el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+      } catch { }
 
-        // LinkedIn SPA can load name late
-        let fullName = getProfileName();
-        for (let i = 0; i < 12 && !fullName; i++) {
-          await sleep(200);
-          fullName = getProfileName();
-        }
+      try {
+        el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        return true;
+      } catch { }
 
-        if (!fullName) {
-          showToast("Profile name not found");
-          return;
-        }
-
-        const { msg, first, full } = buildMessage(template, fullName);
-
-        const copied = await copyToClipboard(msg);
-        const pasted = await pasteIntoTextarea(msg);
-
-        await chrome.storage.sync.set({
-          latest_full_name: full,
-          latest_first_name: first,
-          latest_message: msg,
-          latest_updated_at: new Date().toISOString()
-        });
-
-        if (pasted) showToast(`Pasted for ${first}`);
-        else if (copied) showToast(`Copied for ${first}`);
-        else showToast("Copy failed");
-      } finally {
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        btn.textContent = oldText;
-        positionButton(btn);
+      try {
+        el.click();
+        return true;
+      } catch {
+        return false;
       }
-    });
-
-    document.body.appendChild(btn);
-    positionButton(btn);
-    attachRepositionListeners();
-  }
-
-  // ---------- SPA navigation handling ----------
-  let lastUrl = location.href;
-
-  function tick() {
-    // Ensure button is always there
-    ensureButton();
-
-    // Reposition frequently (handles modal open/close without URL change)
-    const btn = document.getElementById(UI_ID);
-    if (btn) positionButton(btn);
-
-    // Detect URL changes
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      // no-op: ensureButton + position already handled
     }
-  }
 
-  // Initial
-  tick();
+    function getText(el) {
+      return low(el?.innerText || el?.textContent || "");
+    }
 
-  // Main loop
-  setInterval(tick, 600);
-})();
+    function getAria(el) {
+      return low(el?.getAttribute?.("aria-label") || "");
+    }
+
+    function collectRoots(start = document) {
+      const roots = [];
+      const seen = new Set();
+
+      function visit(node) {
+        if (!node || seen.has(node)) return;
+        seen.add(node);
+        roots.push(node);
+
+        let elements = [];
+        try {
+          if (
+            node instanceof Document ||
+            node instanceof ShadowRoot ||
+            node instanceof Element
+          ) {
+            elements = Array.from(node.querySelectorAll("*"));
+          }
+        } catch { }
+
+        for (const el of elements) {
+          try {
+            if (el.shadowRoot) visit(el.shadowRoot);
+          } catch { }
+        }
+      }
+
+      visit(start);
+      return roots;
+    }
+
+    function queryAllDeep(selector, start = document) {
+      const out = [];
+      const roots = collectRoots(start);
+
+      for (const root of roots) {
+        try {
+          out.push(...Array.from(root.querySelectorAll(selector)));
+        } catch { }
+      }
+
+      return out;
+    }
+
+    function getProfileName() {
+      const selectors = [
+        "main h1",
+        "[role='main'] h1",
+        ".pv-text-details__left-panel h1",
+        ".ph5 h1"
+      ];
+
+      for (const sel of selectors) {
+        const els = queryAllDeep(sel).filter(isVisible);
+        for (const el of els) {
+          const txt = norm(el.textContent);
+          if (!txt) continue;
+          if (txt.length < 2 || txt.length > 120) continue;
+          return txt;
+        }
+      }
+
+      const title = norm(document.title);
+      if (title.includes("|")) {
+        const name = norm(title.split("|")[0]);
+        if (name) return name;
+      }
+
+      return "";
+    }
+
+    function firstNameFromFull(fullName) {
+      const cleaned = norm(fullName).split("(")[0].split(",")[0].trim();
+      return cleaned.split(/\s+/).filter(Boolean)[0] || "";
+    }
+
+    function buildMessage(template, fullName) {
+      const full = norm(fullName);
+      const first = firstNameFromFull(full) || "there";
+      const message = (template || "")
+        .replace(/\{FirstName\}/g, first)
+        .replace(/\{Name\}/g, first)
+        .replace(/\{FullName\}/g, full)
+        .trim();
+
+      return { full, first, message };
+    }
+
+    function getPrimaryProfileSection() {
+      const candidates = queryAllDeep("main section, .pv-top-card, .artdeco-card").filter(isVisible);
+      const profileName = low(getProfileName());
+
+      let best = null;
+      let bestScore = -Infinity;
+
+      for (const el of candidates) {
+        const text = getText(el);
+        const rect = el.getBoundingClientRect();
+        let score = 0;
+
+        if (profileName && text.includes(profileName)) score += 100;
+        if (text.includes("message")) score += 20;
+        if (text.includes("follow")) score += 20;
+        if (text.includes("connect")) score += 40;
+        if (text.includes("more")) score += 20;
+        if (text.includes("about")) score -= 80;
+        if (text.includes("activity")) score -= 80;
+        if (text.includes("featured")) score -= 120;
+        if (rect.top >= -100 && rect.top < 500) score += 50;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = el;
+        }
+      }
+
+      return best;
+    }
+
+    function getClickableCandidates(root = document) {
+      return queryAllDeep("button, a, [role='button'], [role='menuitem']", root).filter(isVisible);
+    }
+
+    function isConnectElement(el) {
+      const text = getText(el);
+      const aria = getAria(el);
+      const href = low(el.getAttribute?.("href") || "");
+
+      const positive =
+        text === "connect" ||
+        text.startsWith("connect") ||
+        text.includes("connect") ||
+        text.includes("invite") ||
+        aria.includes("connect") ||
+        aria.includes("invite") ||
+        href.includes("/preload/custom-invite/");
+
+      const negative =
+        text.includes("message") ||
+        text.includes("follow") ||
+        text.includes("remove") ||
+        text.includes("pending") ||
+        text.includes("accept") ||
+        text.includes("send without a note") ||
+        text.includes("add a note") ||
+        aria.includes("message") ||
+        aria.includes("follow");
+
+      return positive && !negative;
+    }
+
+    function isMoreElement(el) {
+      const text = getText(el);
+      const aria = getAria(el);
+      return (
+        text === "more" ||
+        text.includes("more") ||
+        text === "…" ||
+        text === "..." ||
+        aria === "more" ||
+        aria.includes("more actions")
+      );
+    }
+
+    function findDirectConnectButton() {
+      const section = getPrimaryProfileSection();
+      const roots = [section, document].filter(Boolean);
+
+      for (const root of roots) {
+        const candidates = getClickableCandidates(root);
+        for (const el of candidates) {
+          if (isConnectElement(el)) return el;
+        }
+      }
+
+      return null;
+    }
+
+    function findMoreButton() {
+      const section = getPrimaryProfileSection();
+      const roots = [section, document].filter(Boolean);
+
+      for (const root of roots) {
+        const candidates = getClickableCandidates(root);
+        for (const el of candidates) {
+          if (isMoreElement(el)) return el;
+        }
+      }
+
+      return null;
+    }
+
+    function getVisibleMenus() {
+      return queryAllDeep(
+        '[role="menu"], .artdeco-dropdown__content, .artdeco-dropdown__content-inner, .artdeco-dropdown'
+      ).filter(isVisible);
+    }
+
+    function findConnectInMenu(menu) {
+      if (!menu) return null;
+
+      const items = getClickableCandidates(menu);
+
+      for (const el of items) {
+        const text = getText(el);
+        const aria = getAria(el);
+        const href = low(el.getAttribute?.("href") || "");
+
+        if (
+          href.includes("/preload/custom-invite/") ||
+          text === "connect" ||
+          text.includes("connect") ||
+          aria.includes("connect") ||
+          aria.includes("invite")
+        ) {
+          return el;
+        }
+      }
+
+      return null;
+    }
+
+    function findInviteModalRoot() {
+      const selectors = [
+        '[data-test-modal-id="send-invite-modal"]',
+        '[data-test-modal-container][data-test-modal-id="send-invite-modal"]',
+        '.artdeco-modal.send-invite',
+        '[role="dialog"]'
+      ];
+
+      for (const sel of selectors) {
+        const nodes = queryAllDeep(sel).filter(isVisible);
+        if (nodes.length) return nodes[0];
+      }
+
+      return null;
+    }
+
+    function findAddNoteButtonExact() {
+      const root = findInviteModalRoot() || document;
+
+      const selectors = [
+        '.artdeco-modal__actionbar button[aria-label="Add a note"]',
+        'button[aria-label="Add a note"]'
+      ];
+
+      for (const sel of selectors) {
+        const nodes = queryAllDeep(sel, root).filter(isVisible);
+        if (nodes.length) return nodes[0];
+      }
+
+      return null;
+    }
+
+    function findSendWithoutNoteButtonExact() {
+      const root = findInviteModalRoot() || document;
+
+      const selectors = [
+        '.artdeco-modal__actionbar button[aria-label="Send without a note"]',
+        'button[aria-label="Send without a note"]'
+      ];
+
+      for (const sel of selectors) {
+        const nodes = queryAllDeep(sel, root).filter(isVisible);
+        if (nodes.length) return nodes[0];
+      }
+
+      return null;
+    }
+
+    function findTextarea() {
+      const root = findInviteModalRoot() || document;
+
+      const selectors = [
+        "#custom-message",
+        'textarea[name="message"]',
+        'textarea[placeholder*="We know each other from"]',
+        "textarea"
+      ];
+
+      for (const sel of selectors) {
+        const nodes = queryAllDeep(sel, root).filter(isVisible);
+        if (nodes.length) return nodes[0];
+      }
+
+      return null;
+    }
+
+    function setNativeTextareaValue(textarea, value) {
+      textarea.focus();
+
+      const prototype = window.HTMLTextAreaElement.prototype;
+      const valueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+
+      if (valueSetter) valueSetter.call(textarea, value);
+      else textarea.value = value;
+
+      try {
+        textarea.dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            cancelable: true,
+            data: value,
+            inputType: "insertText"
+          })
+        );
+      } catch {
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      textarea.dispatchEvent(new Event("change", { bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "a" }));
+      textarea.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "a" }));
+      textarea.dispatchEvent(new Event("blur", { bubbles: true }));
+      textarea.focus();
+    }
+
+    async function openConnectFlow() {
+      const direct = findDirectConnectButton();
+      if (direct) {
+        clickLikeUser(direct, "direct-connect");
+        return true;
+      }
+
+      const more = findMoreButton();
+      if (!more) {
+        showToast("No Connect button found");
+        return false;
+      }
+
+      clickLikeUser(more, "more-button");
+
+      const menu = await waitFor(
+        () => {
+          const menus = getVisibleMenus();
+          for (const m of menus) {
+            const item = findConnectInMenu(m);
+            if (item) return m;
+          }
+          return null;
+        },
+        "visible-menu-with-connect",
+        5000,
+        120
+      );
+
+      if (!menu) {
+        showToast("More menu opened, but Connect not found");
+        return false;
+      }
+
+      const connectItem = findConnectInMenu(menu);
+      if (!connectItem) {
+        showToast("Connect not found in menu");
+        return false;
+      }
+
+      clickLikeUser(connectItem, "menu-connect");
+      return true;
+    }
+
+    async function ensureInviteTextareaOpen() {
+      let textarea = findTextarea();
+      if (textarea) return textarea;
+
+      const firstState = await waitFor(
+        () => {
+          const ta = findTextarea();
+          if (ta) return { type: "textarea", el: ta };
+
+          const addBtn = findAddNoteButtonExact();
+          if (addBtn) return { type: "addNote", el: addBtn };
+
+          const noNoteBtn = findSendWithoutNoteButtonExact();
+          if (noNoteBtn) return { type: "sendWithout", el: noNoteBtn };
+
+          return null;
+        },
+        "linkedin-send-invite-state",
+        12000,
+        150
+      );
+
+      if (!firstState) return null;
+
+      if (firstState.type === "textarea") {
+        return firstState.el;
+      }
+
+      const addBtn = findAddNoteButtonExact();
+      if (addBtn) {
+        clickLikeUser(addBtn, "add-note-button");
+        await sleep(1200);
+
+        textarea = await waitFor(() => findTextarea(), "linkedin-note-textarea", 12000, 150);
+        return textarea;
+      }
+
+      return null;
+    }
+
+    async function pasteMessage(message) {
+      const textarea = await ensureInviteTextareaOpen();
+      if (!textarea) {
+        showToast("Invitation text box not found");
+        return false;
+      }
+
+      setNativeTextareaValue(textarea, message);
+      await sleep(350);
+
+      let ok = norm(textarea.value) === norm(message);
+
+      if (!ok) {
+        textarea.focus();
+        textarea.select?.();
+        try {
+          document.execCommand("insertText", false, message);
+        } catch { }
+        await sleep(350);
+        ok = norm(textarea.value) === norm(message);
+      }
+
+      if (!ok) {
+        textarea.value = "";
+        setNativeTextareaValue(textarea, message);
+        await sleep(350);
+        ok = norm(textarea.value) === norm(message);
+      }
+
+      return ok;
+    }
+
+    async function runFlow(message) {
+      const alreadyOpen = findTextarea();
+      if (!alreadyOpen) {
+        const opened = await openConnectFlow();
+        if (!opened) return false;
+        await sleep(1000);
+      }
+
+      return pasteMessage(message);
+    }
+
+    function shouldShowButton() {
+      return /linkedin\.com\/in\//i.test(location.href);
+    }
+
+    function styleButton(btn) {
+      btn.style.position = "fixed";
+      btn.style.left = "24px";
+      btn.style.top = "50%";
+      btn.style.transform = "translateY(-50%)";
+      btn.style.zIndex = "2147483647";
+      btn.style.background = "#6366f1";
+      btn.style.color = "#fff";
+      btn.style.border = "none";
+      btn.style.borderRadius = "10px";
+      btn.style.padding = "10px 14px";
+      btn.style.fontSize = "12px";
+      btn.style.fontWeight = "700";
+      btn.style.fontFamily = "Arial, sans-serif";
+      btn.style.cursor = "pointer";
+      btn.style.boxShadow = "0 8px 24px rgba(0,0,0,.18)";
+    }
+
+    async function generateMessageFromStorage() {
+      const { enabled = true, template = "" } = await storageGet({
+        enabled: true,
+        template: ""
+      });
+
+      if (!enabled) {
+        showToast("Extension disabled");
+        return null;
+      }
+
+      if (!template.trim()) {
+        showToast("Save a template first");
+        return null;
+      }
+
+      const fullName = getProfileName();
+      if (!fullName) {
+        showToast("Profile name not found");
+        return null;
+      }
+
+      const built = buildMessage(template, fullName);
+
+      await storageSet({
+        latest_full_name: built.full,
+        latest_first_name: built.first,
+        latest_message: built.message,
+        latest_updated_at: new Date().toISOString()
+      });
+
+      return built;
+    }
+
+    async function handleAutofillMessage(message) {
+      if (!message || !norm(message)) {
+        showToast("Message is empty");
+        return { ok: false, reason: "empty_message" };
+      }
+
+      await copyToClipboard(message);
+      const ok = await runFlow(message);
+
+      if (ok) {
+        showToast("Message pasted");
+        return { ok: true };
+      }
+
+      showToast("Could not paste message");
+      return { ok: false, reason: "flow_failed" };
+    }
+
+    function createButton() {
+      const btn = document.createElement("button");
+      btn.id = UI_ID;
+      btn.type = "button";
+      btn.textContent = "Copy & Paste";
+      btn.setAttribute("aria-label", "Copy and paste personalized message");
+      styleButton(btn);
+
+      btn.addEventListener("click", async () => {
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Working...";
+        btn.style.opacity = "0.8";
+
+        try {
+          const built = await generateMessageFromStorage();
+          if (!built) return;
+
+          await handleAutofillMessage(built.message);
+        } catch (e) {
+          error("Fatal click error", e);
+
+          if (isExtensionContextInvalid(e)) {
+            showToast("Extension reloaded. Refresh this page.");
+          } else {
+            showToast("Script error");
+          }
+        } finally {
+          btn.disabled = false;
+          btn.textContent = oldText;
+          btn.style.opacity = "1";
+        }
+      });
+
+      return btn;
+    }
+
+    function ensureButton() {
+      const existing = document.getElementById(UI_ID);
+
+      if (!shouldShowButton()) {
+        if (existing) existing.remove();
+        return;
+      }
+
+      if (existing) return;
+      if (!document.body) return;
+
+      const btn = createButton();
+      document.body.appendChild(btn);
+    }
+
+    async function updatePreview() {
+      const { enabled = true, template = "" } = await storageGet({
+        enabled: true,
+        template: ""
+      });
+
+      const fullName = getProfileName();
+      const { message, full, first } = buildMessage(template, fullName);
+
+      await storageSet({
+        latest_full_name: full,
+        latest_first_name: first,
+        latest_message: enabled ? message : "",
+        latest_updated_at: new Date().toISOString()
+      });
+    }
+
+    function installMessageListener() {
+      try {
+        if (typeof chrome === "undefined") return;
+        if (!chrome.runtime || !chrome.runtime.onMessage) return;
+        if (window.__NAMEPASTE_LISTENER_INSTALLED__) return;
+
+        window.__NAMEPASTE_LISTENER_INSTALLED__ = true;
+
+        chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+          if (!req || typeof req !== "object") return;
+
+          if (req.type === "NAMEPASTE_AUTOFILL") {
+            (async () => {
+              try {
+                const message = norm(req.message || "");
+                const result = await handleAutofillMessage(message);
+                sendResponse(result);
+              } catch (e) {
+                if (isExtensionContextInvalid(e)) {
+                  sendResponse({ ok: false, reason: "refresh_required" });
+                } else {
+                  sendResponse({ ok: false, reason: "exception", error: String(e) });
+                }
+              }
+            })();
+
+            return true;
+          }
+        });
+      } catch { }
+    }
+
+    function observeUrlChanges() {
+      let lastHref = location.href;
+
+      const observer = new MutationObserver(() => {
+        if (location.href !== lastHref) {
+          lastHref = location.href;
+          setTimeout(() => {
+            ensureButton();
+            updatePreview().catch(() => { });
+          }, 500);
+        }
+      });
+
+      observer.observe(document.documentElement || document.body, {
+        childList: true,
+        subtree: true
+      });
+    }
+
+    function exposeDebugApi() {
+      window.__namePasteHelper = {
+        getProfileName,
+        findDirectConnectButton,
+        findMoreButton,
+        findInviteModalRoot,
+        findAddNoteButtonExact,
+        findSendWithoutNoteButtonExact,
+        findTextarea,
+        queryAllDeep,
+        runTest: async () => {
+          const built = await generateMessageFromStorage();
+          if (!built) return false;
+          const res = await handleAutofillMessage(built.message);
+          return res.ok;
+        }
+      };
+    }
+
+    async function boot() {
+      await waitFor(() => document.body, "document.body", 8000, 50);
+      ensureButton();
+      installMessageListener();
+      observeUrlChanges();
+      exposeDebugApi();
+      updatePreview().catch(() => { });
+    }
+
+    boot();
+  })();
+}
